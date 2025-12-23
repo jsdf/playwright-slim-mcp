@@ -1,0 +1,23 @@
+{
+  "name": "playwright-slim-mcp",
+  "version": "1.0.0",
+  "description": "MCP proxy for Playwright that summarizes accessibility snapshots using Claude",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "playwright-slim-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "yarn build && node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
