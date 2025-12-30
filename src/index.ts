@@ -12,10 +12,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Logger setup - logs to logs/ directory relative to package root
+// Set DEBUG=1 or PLAYWRIGHT_SLIM_DEBUG=1 to enable file logging
+const DEBUG_ENABLED = process.env.DEBUG === "1" || process.env.PLAYWRIGHT_SLIM_DEBUG === "1";
 const LOG_DIR = join(__dirname, "..", "logs");
 const LOG_FILE = join(LOG_DIR, `mcp-${new Date().toISOString().replace(/[:.]/g, "-")}.log`);
 
 function ensureLogDir(): void {
+  if (!DEBUG_ENABLED) return;
   try {
     mkdirSync(LOG_DIR, { recursive: true });
   } catch {
@@ -24,6 +27,8 @@ function ensureLogDir(): void {
 }
 
 function log(level: "INFO" | "ERROR" | "DEBUG", message: string, data?: unknown): void {
+  if (!DEBUG_ENABLED) return;
+
   const timestamp = new Date().toISOString();
   const logLine = data
     ? `[${timestamp}] [${level}] ${message} ${JSON.stringify(data)}\n`
@@ -117,6 +122,7 @@ ${snapshotYaml}
     log("INFO", "Summarization complete", {
       originalSize: snapshotYaml.length,
       summarySize: summary.length,
+      summary,
     });
 
     // Replace the snapshot section with the summary

@@ -11,7 +11,7 @@ The official `@playwright/mcp` returns full accessibility tree snapshots after e
 This proxy:
 1. Forwards all requests to the real Playwright MCP
 2. Intercepts responses containing page snapshots
-3. Uses Claude CLI (Haiku model) to summarize snapshots to ~10 lines
+3. Uses Anthropic API (Claude Haiku) to summarize snapshots to ~10 lines
 4. Preserves `[ref=XXX]` values for interactive elements so you can still click/type
 
 ## Installation
@@ -31,7 +31,10 @@ In your Claude Code MCP config (`~/.claude.json`), replace the Playwright MCP wi
   "mcpServers": {
     "playwright": {
       "command": "node",
-      "args": ["/Users/jsdf/code/playwright-slim-mcp/dist/index.js"]
+      "args": ["/path/to/playwright-slim-mcp/dist/index.js"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
     }
   }
 }
@@ -39,8 +42,15 @@ In your Claude Code MCP config (`~/.claude.json`), replace the Playwright MCP wi
 
 ## Requirements
 
-- `claude` CLI installed and authenticated
+- `ANTHROPIC_API_KEY` environment variable
 - Node.js 18+
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
+| `DEBUG` or `PLAYWRIGHT_SLIM_DEBUG` | No | Set to `1` to enable file logging to `logs/` |
 
 ## Configuration
 
@@ -59,6 +69,20 @@ The proxy summarizes snapshots for these tools:
 - `browser_snapshot`
 
 Small snapshots (<500 chars) are passed through unchanged.
+
+### Unsummarized Snapshots
+
+Use `browser_snapshot_full` to get the raw accessibility tree without summarization. This tool is automatically added as an alias.
+
+## Testing
+
+```bash
+# Create .env file with your API key
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+
+# Run tests (includes real API calls and browser tests)
+npm test
+```
 
 ## Example
 
