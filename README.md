@@ -50,6 +50,7 @@ In your Claude Code MCP config (`~/.claude.json`), replace the Playwright MCP wi
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
+| `PLAYWRIGHT_SLIM_MODEL` | No | Model for summarization (default: `claude-3-5-haiku-latest`) |
 | `DEBUG` or `PLAYWRIGHT_SLIM_DEBUG` | No | Set to `1` to enable file logging to `logs/` |
 
 ## Configuration

@@ -69,6 +69,9 @@ export const SNAPSHOT_PATTERN =
 // Initialize Anthropic client - reads ANTHROPIC_API_KEY from environment
 const anthropic = new Anthropic();
 
+// Model for summarization - can be overridden via env var
+const SUMMARIZE_MODEL = process.env.PLAYWRIGHT_SLIM_MODEL || "claude-3-5-haiku-latest";
+
 export async function summarizeSnapshot(fullText: string): Promise<string> {
   const match = fullText.match(SNAPSHOT_PATTERN);
   if (!match) {
@@ -106,7 +109,7 @@ ${snapshotYaml}
 
   try {
     const message = await anthropic.messages.create({
-      model: "claude-3-5-haiku-latest",
+      model: SUMMARIZE_MODEL,
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });
