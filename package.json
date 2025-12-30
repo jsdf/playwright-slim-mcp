@@ -9,10 +9,35 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "start": "yarn build && node dist/index.js",
     "dev": "tsc --watch",
     "test": "dotenv -- vitest run",
     "test:watch": "dotenv -- vitest"
+  },
+  "keywords": [
+    "mcp",
+    "playwright",
+    "anthropic",
+    "claude",
+    "accessibility",
+    "browser-automation"
+  ],
+  "author": "jsdf",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jsdf/playwright-slim-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jsdf/playwright-slim-mcp/issues"
+  },
+  "homepage": "https://github.com/jsdf/playwright-slim-mcp#readme",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

@@ -2,6 +2,26 @@
 
 A proxy MCP server for Playwright that summarizes accessibility snapshots using Claude Haiku to reduce context usage.
 
+## Quickstart
+
+Add to your Claude Code MCP config (`~/.claude.json`):
+
+```json
+{
+  "mcpServers": {
+    "playwright-slim": {
+      "command": "npx",
+      "args": ["playwright-slim-mcp"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
+    }
+  }
+}
+```
+
+That's it! The proxy will automatically download and run.
+
 ## Problem
 
 The official `@playwright/mcp` returns full accessibility tree snapshots after every action (click, type, navigate, etc.). These snapshots can be 2-10KB+ each, quickly consuming context window.
@@ -16,28 +36,38 @@ This proxy:
 
 ## Installation
 
+### Via npx (recommended)
+
+No installation needed - just add to your MCP config as shown in Quickstart.
+
+### Global install
+
 ```bash
-cd ~/code/playwright-slim-mcp
-npm install
-npm run build
+npm install -g playwright-slim-mcp
 ```
 
-## Usage
-
-In your Claude Code MCP config (`~/.claude.json`), replace the Playwright MCP with this proxy:
+Then use in your MCP config:
 
 ```json
 {
   "mcpServers": {
-    "playwright": {
-      "command": "node",
-      "args": ["/path/to/playwright-slim-mcp/dist/index.js"],
+    "playwright-slim": {
+      "command": "playwright-slim-mcp",
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-..."
       }
     }
   }
 }
+```
+
+### From source
+
+```bash
+git clone https://github.com/jsdf/playwright-slim-mcp.git
+cd playwright-slim-mcp
+npm install
+npm run build
 ```
 
 ## Requirements
@@ -104,3 +134,7 @@ Admin settings for "James's Workspace"
 Tabs: Overview [e343], Feature flags [e348, selected], Members [e353], Tables [e358]
 Actions: Go back [e330], Impersonate [e334]
 ```
+
+## License
+
+MIT
