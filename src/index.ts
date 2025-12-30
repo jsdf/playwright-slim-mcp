@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { spawn, spawnSync, ChildProcess } from "child_process";
+import { spawn, ChildProcess } from "child_process";
 import { createInterface } from "readline";
 import { appendFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import Anthropic from "@anthropic-ai/sdk";
 
 // ES module equivalents of __filename and __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -57,10 +58,13 @@ const SUMMARIZE_TOOLS = new Set([
 ]);
 
 // Pattern to find the Page Snapshot section
-const SNAPSHOT_PATTERN =
+export const SNAPSHOT_PATTERN =
   /### Page state\n- Page URL: ([^\n]+)\n- Page Title: ([^\n]+)\n- Page Snapshot:\n```yaml\n([\s\S]*?)```/;
 
-function summarizeSnapshot(fullText: string): string {
+// Initialize Anthropic client - reads ANTHROPIC_API_KEY from environment
+const anthropic = new Anthropic();
+
+export async function summarizeSnapshot(fullText: string): Promise<string> {
   const match = fullText.match(SNAPSHOT_PATTERN);
   if (!match) {
     return fullText; // No snapshot found, return as-is
@@ -84,7 +88,7 @@ function summarizeSnapshot(fullText: string): string {
 
   const prompt = `Summarize this page accessibility snapshot very concisely (max ~10 lines).
   Include the main headings, key interactive elements, and any form fields.
-Keep [ref=XXX] values for ALL interactive elements (buttons, links, inputs, tabs, checkboxes), unless they are repeating elements like buttons in a table. In that case include the first 3 of that type and then describe the rest as "N more similar items".  
+Keep [ref=XXX] values for ALL interactive elements (buttons, links, inputs, tabs, checkboxes), unless they are repeating elements like buttons in a table. In that case include the first 3 of that type and then describe the rest as "N more similar items".
 Format: Brief description, then list key elements with their refs.
 Omit: decorative images, generic containers, style details.
 
@@ -96,30 +100,20 @@ ${snapshotYaml}
 \`\`\``;
 
   try {
-    const result = spawnSync(
-      "claude",
-      ["--print", prompt, "--model", "haiku", "--no-session-persistence"],
-      {
-        encoding: "utf-8",
-        timeout: 30000, // 30 second timeout
-        maxBuffer: 1024 * 1024 * 5, // 5MB buffer
-      }
-    );
+    const message = await anthropic.messages.create({
+      model: "claude-3-5-haiku-latest",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+    });
 
-    if (result.status !== 0 || result.error) {
-      log("ERROR", "Claude summarization failed", {
-        status: result.status,
-        error: result.error?.message,
-        stderr: result.stderr?.slice(0, 500),
-      });
-      console.error(
-        "[playwright-slim-mcp] Claude summarization failed:",
-        result.stderr || result.error
-      );
-      return fullText; // Fall back to original
+    // Extract text from the response
+    const textBlock = message.content.find((block) => block.type === "text");
+    if (!textBlock || textBlock.type !== "text") {
+      log("ERROR", "No text in Anthropic response", { content: message.content });
+      return fullText;
     }
 
-    const summary = result.stdout.trim();
+    const summary = textBlock.text.trim();
     log("INFO", "Summarization complete", {
       originalSize: snapshotYaml.length,
       summarySize: summary.length,
@@ -134,13 +128,13 @@ ${summary}`;
 
     return fullText.replace(fullMatch, newPageState);
   } catch (err) {
-    log("ERROR", "Error running Claude", { error: String(err) });
-    console.error("[playwright-slim-mcp] Error running Claude:", err);
+    log("ERROR", "Error calling Anthropic API", { error: String(err) });
+    console.error("[playwright-slim-mcp] Error calling Anthropic API:", err);
     return fullText; // Fall back to original
   }
 }
 
-function processToolResult(toolName: string, result: unknown): unknown {
+async function processToolResult(toolName: string, result: unknown): Promise<unknown> {
   if (!SUMMARIZE_TOOLS.has(toolName)) {
     return result;
   }
@@ -149,9 +143,8 @@ function processToolResult(toolName: string, result: unknown): unknown {
   if (result && typeof result === "object" && "content" in result) {
     const content = (result as { content: unknown[] }).content;
     if (Array.isArray(content)) {
-      return {
-        ...result,
-        content: content.map((item) => {
+      const processedContent = await Promise.all(
+        content.map(async (item) => {
           if (
             item &&
             typeof item === "object" &&
@@ -161,11 +154,15 @@ function processToolResult(toolName: string, result: unknown): unknown {
           ) {
             return {
               ...item,
-              text: summarizeSnapshot(item.text as string),
+              text: await summarizeSnapshot(item.text as string),
             };
           }
           return item;
-        }),
+        })
+      );
+      return {
+        ...result,
+        content: processedContent,
       };
     }
   }
@@ -244,53 +241,11 @@ class PlaywrightMCPProxy {
       input: this.playwrightProcess.stdout,
     });
     stdoutReader.on("line", (line) => {
-      try {
-        const message = JSON.parse(line);
-
-        // Inject aliased tools into tools/list response
-        if (message.result?.tools && Array.isArray(message.result.tools)) {
-          const snapshotTool = message.result.tools.find(
-            (t: { name: string }) => t.name === "browser_snapshot"
-          );
-          if (snapshotTool) {
-            message.result.tools.push({
-              ...snapshotTool,
-              name: "browser_snapshot_full",
-              description:
-                "Capture full accessibility snapshot without summarization",
-              annotations: {
-                ...snapshotTool.annotations,
-                title: "Full page snapshot (unsummarized)",
-              },
-            });
-          }
-        }
-
-        // Check if this is a response to a tool call
-        if (message.id !== undefined && this.pendingRequests.has(message.id)) {
-          const toolName = this.pendingRequests.get(message.id)!;
-          this.pendingRequests.delete(message.id);
-
-          const willSummarize = SUMMARIZE_TOOLS.has(toolName);
-          log("INFO", "Tool response", {
-            id: message.id,
-            tool: toolName,
-            willSummarize,
-            hasError: !!message.error,
-          });
-
-          // Process the result to summarize snapshots
-          if (message.result) {
-            message.result = processToolResult(toolName, message.result);
-          }
-        }
-
-        // Send processed message to Claude Code
-        process.stdout.write(JSON.stringify(message) + "\n");
-      } catch {
-        // Forward non-JSON lines as-is
+      this.processLine(line).catch((err) => {
+        log("ERROR", "Error processing line", { error: String(err) });
+        // Forward original line on error
         process.stdout.write(line + "\n");
-      }
+      });
     });
 
     // Handle process exit
@@ -310,6 +265,56 @@ class PlaywrightMCPProxy {
       this.playwrightProcess?.kill();
       process.exit(0);
     });
+  }
+
+  private async processLine(line: string): Promise<void> {
+    try {
+      const message = JSON.parse(line);
+
+      // Inject aliased tools into tools/list response
+      if (message.result?.tools && Array.isArray(message.result.tools)) {
+        const snapshotTool = message.result.tools.find(
+          (t: { name: string }) => t.name === "browser_snapshot"
+        );
+        if (snapshotTool) {
+          message.result.tools.push({
+            ...snapshotTool,
+            name: "browser_snapshot_full",
+            description:
+              "Capture full accessibility snapshot without summarization",
+            annotations: {
+              ...snapshotTool.annotations,
+              title: "Full page snapshot (unsummarized)",
+            },
+          });
+        }
+      }
+
+      // Check if this is a response to a tool call
+      if (message.id !== undefined && this.pendingRequests.has(message.id)) {
+        const toolName = this.pendingRequests.get(message.id)!;
+        this.pendingRequests.delete(message.id);
+
+        const willSummarize = SUMMARIZE_TOOLS.has(toolName);
+        log("INFO", "Tool response", {
+          id: message.id,
+          tool: toolName,
+          willSummarize,
+          hasError: !!message.error,
+        });
+
+        // Process the result to summarize snapshots
+        if (message.result) {
+          message.result = await processToolResult(toolName, message.result);
+        }
+      }
+
+      // Send processed message to Claude Code
+      process.stdout.write(JSON.stringify(message) + "\n");
+    } catch {
+      // Forward non-JSON lines as-is
+      process.stdout.write(line + "\n");
+    }
   }
 }
 
