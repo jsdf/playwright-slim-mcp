@@ -117,8 +117,9 @@ ${snapshotYaml}
     // Extract text from the response
     const textBlock = message.content.find((block) => block.type === "text");
     if (!textBlock || textBlock.type !== "text") {
+      const err = new Error("Anthropic API returned no text content");
       log("ERROR", "No text in Anthropic response", { content: message.content });
-      return fullText;
+      throw err;
     }
 
     const summary = textBlock.text.trim();
@@ -138,8 +139,7 @@ ${summary}`;
     return fullText.replace(fullMatch, newPageState);
   } catch (err) {
     log("ERROR", "Error calling Anthropic API", { error: String(err) });
-    console.error("[playwright-slim-mcp] Error calling Anthropic API:", err);
-    return fullText; // Fall back to original
+    throw new Error(`Anthropic API error: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -252,7 +252,25 @@ class PlaywrightMCPProxy {
     stdoutReader.on("line", (line) => {
       this.processLine(line).catch((err) => {
         log("ERROR", "Error processing line", { error: String(err) });
-        // Forward original line on error
+        // Try to extract request ID and return MCP error response
+        try {
+          const message = JSON.parse(line);
+          if (message.id !== undefined) {
+            const errorResponse = {
+              jsonrpc: "2.0",
+              id: message.id,
+              error: {
+                code: -32000,
+                message: `Summarization failed: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            };
+            process.stdout.write(JSON.stringify(errorResponse) + "\n");
+            return;
+          }
+        } catch {
+          // Couldn't parse as JSON, fall through
+        }
+        // Forward original line if we can't construct an error response
         process.stdout.write(line + "\n");
       });
     });
