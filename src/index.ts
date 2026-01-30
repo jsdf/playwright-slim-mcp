@@ -51,9 +51,59 @@ const SKIP_SUMMARIZE_TOOLS = new Set([
   "browser_snapshot_full", // Explicit full snapshot request
 ]);
 
-// Pattern to find the Page Snapshot section
+// Pattern to find the Page Snapshot section (new Playwright MCP format)
 export const SNAPSHOT_PATTERN =
-  /### Page state\n- Page URL: ([^\n]+)\n- Page Title: ([^\n]+)\n- Page Snapshot:\n```yaml\n([\s\S]*?)```/;
+  /### Page\n- Page URL: ([^\n]+)\n- Page Title: ([^\n]+)\n### Snapshot\n```yaml\n([\s\S]*?)```/;
+
+// Pattern to find the Events section
+export const EVENTS_PATTERN = /### Events\n([\s\S]*?)(?=\n###|$)/;
+
+/**
+ * Collapse consecutive duplicate lines in the Events section.
+ * Repeats are shown as the first instance followed by "[repeated N times]".
+ */
+export function summarizeEvents(fullText: string): string {
+  const match = fullText.match(EVENTS_PATTERN);
+  if (!match) {
+    return fullText;
+  }
+
+  const [fullMatch, eventsContent] = match;
+  const lines = eventsContent.split("\n");
+
+  const outputLines: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const currentLine = lines[i];
+    let count = 1;
+
+    // Count consecutive identical lines
+    while (i + count < lines.length && lines[i + count] === currentLine) {
+      count++;
+    }
+
+    outputLines.push(currentLine);
+    if (count > 1) {
+      outputLines.push(`  [repeated ${count} times]`);
+    }
+
+    i += count;
+  }
+
+  // Only replace if we reduced line count
+  if (outputLines.length >= lines.length) {
+    return fullText;
+  }
+
+  log("DEBUG", "Summarized events section", {
+    originalLines: lines.length,
+    summarizedLines: outputLines.length,
+  });
+
+  const newEventsSection = `### Events\n${outputLines.join("\n")}`;
+  return fullText.replace(fullMatch, newEventsSection);
+}
 
 // Initialize Anthropic client - reads ANTHROPIC_API_KEY from environment
 const anthropic = new Anthropic();
@@ -64,6 +114,10 @@ const SUMMARIZE_MODEL = process.env.PLAYWRIGHT_SLIM_MODEL || "claude-3-5-haiku-l
 export async function summarizeSnapshot(fullText: string): Promise<string> {
   const match = fullText.match(SNAPSHOT_PATTERN);
   if (!match) {
+    log("DEBUG", "SNAPSHOT_PATTERN did not match", {
+      textLength: fullText.length,
+      textPreview: fullText.slice(0, 500),
+    });
     return fullText; // No snapshot found, return as-is
   }
 
@@ -119,10 +173,10 @@ ${snapshotYaml}
     });
 
     // Replace the snapshot section with the summary
-    const newPageState = `### Page state
+    const newPageState = `### Page
 - Page URL: ${pageUrl}
 - Page Title: ${pageTitle}
-- Page Snapshot (summarized):
+### Snapshot (summarized)
 ${summary}`;
 
     return fullText.replace(fullMatch, newPageState);
@@ -150,9 +204,12 @@ async function processToolResult(toolName: string, result: unknown): Promise<unk
             item.type === "text" &&
             "text" in item
           ) {
+            let text = item.text as string;
+            text = await summarizeSnapshot(text);
+            text = summarizeEvents(text);
             return {
               ...item,
-              text: await summarizeSnapshot(item.text as string),
+              text,
             };
           }
           return item;

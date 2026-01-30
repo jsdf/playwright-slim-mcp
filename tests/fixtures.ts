@@ -1,10 +1,10 @@
 // Test fixtures for integration tests
 
 // A small snapshot (< 500 chars) that should pass through unchanged
-export const smallSnapshot = `### Page state
+export const smallSnapshot = `### Page
 - Page URL: https://example.com
 - Page Title: Simple Page
-- Page Snapshot:
+### Snapshot
 \`\`\`yaml
 - heading "Welcome" [ref=h1]
 - button "Submit" [ref=btn1]
@@ -12,10 +12,10 @@ export const smallSnapshot = `### Page state
 \`\`\``;
 
 // A large snapshot (> 500 chars) that should be summarized
-export const largeSnapshot = `### Page state
+export const largeSnapshot = `### Page
 - Page URL: https://example.com/dashboard
 - Page Title: User Dashboard - My Application
-- Page Snapshot:
+### Snapshot
 \`\`\`yaml
 - banner:
   - heading "My Application" [level=1]
@@ -75,3 +75,25 @@ export const snapshotWithContext = `Tool executed successfully.
 ${largeSnapshot}
 
 Additional information about the page interaction.`;
+
+// Events section with repeated lines
+export const eventsWithRepeats = `### Events
+- [LOG] MOCKED: Segment tracked "Exp Assignment" wit...js?v=78a91138:7431
+- [LOG] MOCKED: Segment tracked "Exp Assignment" wit...js?v=78a91138:7431
+- [LOG] MOCKED: Segment tracked "Exp Assignment" wit...js?v=78a91138:7431
+- [LOG] MOCKED: Segment tracked "Exp Assignment" wit...js?v=78a91138:7431
+- [LOG] MOCKED: Segment tracked "Exp Assignment" wit...js?v=78a91138:7431
+- [LOG] MOCKED: Segment tracked "Command Center Open"...js?v=78a91138:7431
+- [ERROR] Warning: validateDOMNesting(...): %s canno...js?v=78a91138:7431`;
+
+// Events section without repeats
+export const eventsNoRepeats = `### Events
+- [LOG] First message
+- [LOG] Second message
+- [ERROR] Some error`;
+
+// Full response with both snapshot and events
+export const fullResponseWithEvents = `### Ran Playwright code
+await page.click();
+${smallSnapshot}
+${eventsWithRepeats}`;

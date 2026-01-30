@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { summarizeSnapshot, SNAPSHOT_PATTERN } from "../src/index.js";
+import { summarizeSnapshot, summarizeEvents, SNAPSHOT_PATTERN, EVENTS_PATTERN } from "../src/index.js";
 import {
   smallSnapshot,
   largeSnapshot,
   noSnapshotText,
   snapshotWithContext,
+  eventsWithRepeats,
+  eventsNoRepeats,
+  fullResponseWithEvents,
 } from "./fixtures.js";
 
 describe("summarizeSnapshot", () => {
@@ -77,6 +80,59 @@ describe("SNAPSHOT_PATTERN regex", () => {
 
   it("does not match text without snapshot", () => {
     const match = noSnapshotText.match(SNAPSHOT_PATTERN);
+    expect(match).toBeNull();
+  });
+});
+
+describe("summarizeEvents", () => {
+  it("collapses consecutive duplicate lines", () => {
+    const result = summarizeEvents(eventsWithRepeats);
+
+    // Should contain the first instance
+    expect(result).toContain('- [LOG] MOCKED: Segment tracked "Exp Assignment"');
+
+    // Should have [repeated N times] for the 5 duplicates
+    expect(result).toContain("[repeated 5 times]");
+
+    // Should still contain unique lines
+    expect(result).toContain('- [LOG] MOCKED: Segment tracked "Command Center Open"');
+    expect(result).toContain("- [ERROR] Warning: validateDOMNesting");
+
+    // Should be shorter
+    expect(result.length).toBeLessThan(eventsWithRepeats.length);
+  });
+
+  it("passes through events without repeats unchanged", () => {
+    const result = summarizeEvents(eventsNoRepeats);
+    expect(result).toBe(eventsNoRepeats);
+  });
+
+  it("passes through text without events section unchanged", () => {
+    const result = summarizeEvents(noSnapshotText);
+    expect(result).toBe(noSnapshotText);
+  });
+
+  it("handles full response with both snapshot and events", () => {
+    const result = summarizeEvents(fullResponseWithEvents);
+
+    // Should preserve content before events
+    expect(result).toContain("### Ran Playwright code");
+    expect(result).toContain("### Page");
+
+    // Should collapse repeated events
+    expect(result).toContain("[repeated 5 times]");
+  });
+});
+
+describe("EVENTS_PATTERN regex", () => {
+  it("matches events section", () => {
+    const match = eventsWithRepeats.match(EVENTS_PATTERN);
+    expect(match).not.toBeNull();
+    expect(match![1]).toContain("[LOG]");
+  });
+
+  it("does not match text without events", () => {
+    const match = noSnapshotText.match(EVENTS_PATTERN);
     expect(match).toBeNull();
   });
 });
