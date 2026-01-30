@@ -46,20 +46,9 @@ const TOOL_ALIASES: Record<string, string> = {
   browser_snapshot_full: "browser_snapshot",
 };
 
-// Tools that return snapshots after actions - these get summarized
-const SUMMARIZE_TOOLS = new Set([
-  "browser_click",
-  "browser_type",
-  "browser_press_key",
-  "browser_select_option",
-  "browser_hover",
-  "browser_drag",
-  "browser_navigate",
-  "browser_navigate_back",
-  "browser_handle_dialog",
-  "browser_file_upload",
-  "browser_fill_form",
-  "browser_snapshot", // Also summarize explicit snapshots
+// Tools that should NOT have their responses summarized
+const SKIP_SUMMARIZE_TOOLS = new Set([
+  "browser_snapshot_full", // Explicit full snapshot request
 ]);
 
 // Pattern to find the Page Snapshot section
@@ -144,7 +133,7 @@ ${summary}`;
 }
 
 async function processToolResult(toolName: string, result: unknown): Promise<unknown> {
-  if (!SUMMARIZE_TOOLS.has(toolName)) {
+  if (SKIP_SUMMARIZE_TOOLS.has(toolName)) {
     return result;
   }
 
@@ -208,6 +197,14 @@ class PlaywrightMCPProxy {
 
     // Read from stdin (Claude Code) and forward to Playwright MCP
     const stdinReader = createInterface({ input: process.stdin });
+
+    // Clean up child process when stdin closes (parent disconnects)
+    stdinReader.on("close", () => {
+      log("INFO", "stdin closed, shutting down");
+      this.playwrightProcess?.kill();
+      process.exit(0);
+    });
+
     stdinReader.on("line", (line) => {
       try {
         const message = JSON.parse(line);
@@ -292,6 +289,17 @@ class PlaywrightMCPProxy {
       this.playwrightProcess?.kill();
       process.exit(0);
     });
+
+    process.on("SIGHUP", () => {
+      log("INFO", "Received SIGHUP, shutting down");
+      this.playwrightProcess?.kill();
+      process.exit(0);
+    });
+
+    // Catch-all for any exit path
+    process.on("exit", () => {
+      this.playwrightProcess?.kill();
+    });
   }
 
   private async processLine(line: string): Promise<void> {
@@ -322,7 +330,7 @@ class PlaywrightMCPProxy {
         const toolName = this.pendingRequests.get(message.id)!;
         this.pendingRequests.delete(message.id);
 
-        const willSummarize = SUMMARIZE_TOOLS.has(toolName);
+        const willSummarize = !SKIP_SUMMARIZE_TOOLS.has(toolName);
         log("INFO", "Tool response", {
           id: message.id,
           tool: toolName,
