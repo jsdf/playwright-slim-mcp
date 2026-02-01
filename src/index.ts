@@ -111,6 +111,9 @@ const anthropic = new Anthropic();
 // Model for summarization - can be overridden via env var
 const SUMMARIZE_MODEL = process.env.PLAYWRIGHT_SLIM_MODEL || "claude-3-5-haiku-latest";
 
+// Max snapshot size to send to API (chars). ~100KB keeps us well under token limits.
+const MAX_SNAPSHOT_SIZE = 100000;
+
 export async function summarizeSnapshot(fullText: string): Promise<string> {
   const match = fullText.match(SNAPSHOT_PATTERN);
   if (!match) {
@@ -131,10 +134,23 @@ export async function summarizeSnapshot(fullText: string): Promise<string> {
     return fullText;
   }
 
+  // Truncate very large snapshots to avoid exceeding API token limits
+  let truncatedYaml = snapshotYaml;
+  let wasTruncated = false;
+  if (snapshotYaml.length > MAX_SNAPSHOT_SIZE) {
+    truncatedYaml = snapshotYaml.slice(0, MAX_SNAPSHOT_SIZE) + "\n... [truncated]";
+    wasTruncated = true;
+    log("INFO", "Truncating large snapshot", {
+      originalSize: snapshotYaml.length,
+      truncatedSize: MAX_SNAPSHOT_SIZE,
+    });
+  }
+
   log("INFO", "Summarizing snapshot", {
     url: pageUrl,
     title: pageTitle,
     snapshotSize: snapshotYaml.length,
+    wasTruncated,
   });
 
   const prompt = `Summarize this page accessibility snapshot very concisely (max ~10 lines).
@@ -142,12 +158,12 @@ export async function summarizeSnapshot(fullText: string): Promise<string> {
 Keep [ref=XXX] values for ALL interactive elements (buttons, links, inputs, tabs, checkboxes), unless they are repeating elements like buttons in a table. In that case include the first 3 of that type and then describe the rest as "N more similar items".
 Format: Brief description, then list key elements with their refs.
 Omit: decorative images, generic containers, style details.
-
+${wasTruncated ? "\nNote: This snapshot was truncated due to size. Summarize what's visible." : ""}
 Page: ${pageTitle}
 URL: ${pageUrl}
 
 \`\`\`yaml
-${snapshotYaml}
+${truncatedYaml}
 \`\`\``;
 
   try {
