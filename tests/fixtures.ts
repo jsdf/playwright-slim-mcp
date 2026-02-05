@@ -11,7 +11,7 @@ export const smallSnapshot = `### Page
 - link "Home" [ref=link1]
 \`\`\``;
 
-// A large snapshot (> 500 chars) that should be summarized
+// A large snapshot (> 500 chars) that should be summarized (old format without Console line)
 export const largeSnapshot = `### Page
 - Page URL: https://example.com/dashboard
 - Page Title: User Dashboard - My Application
@@ -97,3 +97,50 @@ export const fullResponseWithEvents = `### Ran Playwright code
 await page.click();
 ${smallSnapshot}
 ${eventsWithRepeats}`;
+
+// A large snapshot with Console line (new Playwright MCP format, post-2024)
+export const largeSnapshotWithConsole = `### Page
+- Page URL: https://example.com/dashboard
+- Page Title: User Dashboard - My Application
+- Console: 5 errors, 2 warnings
+### Snapshot
+\`\`\`yaml
+- banner:
+  - heading "My Application" [level=1]
+  - navigation:
+    - link "Home" [ref=nav-home]
+    - link "Dashboard" [ref=nav-dash]
+    - link "Settings" [ref=nav-settings]
+    - link "Profile" [ref=nav-profile]
+    - link "Logout" [ref=nav-logout]
+- main:
+  - heading "Welcome back, John!" [level=2]
+  - region "Statistics":
+    - text "Total Projects: 42"
+    - text "Active Tasks: 17"
+    - text "Completed: 156"
+  - region "Recent Activity":
+    - list:
+      - listitem "Created new project 'Website Redesign'" [ref=activity-1]
+      - listitem "Completed task 'Update documentation'" [ref=activity-2]
+      - listitem "Added comment on 'Bug fix #234'" [ref=activity-3]
+      - listitem "Assigned to 'Feature request #567'" [ref=activity-4]
+      - listitem "Closed issue 'Performance optimization'" [ref=activity-5]
+  - region "Quick Actions":
+    - button "New Project" [ref=btn-new-project]
+    - button "Create Task" [ref=btn-new-task]
+    - button "View Reports" [ref=btn-reports]
+    - button "Export Data" [ref=btn-export]
+\`\`\``;
+
+// A small snapshot with Console line (new format)
+export const smallSnapshotWithConsole = `### Page
+- Page URL: https://example.com
+- Page Title: Simple Page
+- Console: 2 errors, 0 warnings
+### Snapshot
+\`\`\`yaml
+- heading "Welcome" [ref=h1]
+- button "Submit" [ref=btn1]
+- link "Home" [ref=link1]
+\`\`\``;

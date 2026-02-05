@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { summarizeSnapshot, summarizeEvents, SNAPSHOT_PATTERN, EVENTS_PATTERN } from "../src/index.js";
+import { summarizeSnapshot, summarizeEvents, parsePlaywrightResponse, EVENTS_PATTERN } from "../src/index.js";
 import {
   smallSnapshot,
+  smallSnapshotWithConsole,
   largeSnapshot,
+  largeSnapshotWithConsole,
   noSnapshotText,
   snapshotWithContext,
   eventsWithRepeats,
@@ -67,20 +69,52 @@ describe("summarizeSnapshot", () => {
     // Should be summarized (shorter overall)
     expect(result.length).toBeLessThan(snapshotWithContext.length);
   }, 30000);
+
+  it("summarizes new format snapshots (with Console line)", async () => {
+    const result = await summarizeSnapshot(largeSnapshotWithConsole);
+
+    // Should be different from input (summarized)
+    expect(result).not.toBe(largeSnapshotWithConsole);
+
+    // Should contain the URL and title
+    expect(result).toContain("https://example.com/dashboard");
+    expect(result).toContain("User Dashboard");
+
+    // Should indicate it's summarized
+    expect(result).toContain("(summarized)");
+
+    // Should be shorter than the original
+    expect(result.length).toBeLessThan(largeSnapshotWithConsole.length);
+  }, 30000);
+
+  it("passes through small new-format snapshots unchanged", async () => {
+    const result = await summarizeSnapshot(smallSnapshotWithConsole);
+    expect(result).toBe(smallSnapshotWithConsole);
+  });
 });
 
-describe("SNAPSHOT_PATTERN regex", () => {
-  it("matches valid snapshot format", () => {
-    const match = largeSnapshot.match(SNAPSHOT_PATTERN);
-    expect(match).not.toBeNull();
-    expect(match![1]).toBe("https://example.com/dashboard");
-    expect(match![2]).toBe("User Dashboard - My Application");
-    expect(match![3]).toContain("banner:");
+describe("parsePlaywrightResponse", () => {
+  it("parses valid snapshot format (old format without Console line)", () => {
+    const parsed = parsePlaywrightResponse(largeSnapshot);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.url).toBe("https://example.com/dashboard");
+    expect(parsed!.title).toBe("User Dashboard - My Application");
+    expect(parsed!.snapshotYaml).toContain("banner:");
   });
 
-  it("does not match text without snapshot", () => {
-    const match = noSnapshotText.match(SNAPSHOT_PATTERN);
-    expect(match).toBeNull();
+  it("parses valid snapshot format (new format with Console line)", () => {
+    const parsed = parsePlaywrightResponse(largeSnapshotWithConsole);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.url).toBe("https://example.com/dashboard");
+    expect(parsed!.title).toBe("User Dashboard - My Application");
+    expect(parsed!.snapshotYaml).toContain("banner:");
+    // Ensure fullMatch includes the Console line
+    expect(parsed!.fullMatch).toContain("- Console: 5 errors, 2 warnings");
+  });
+
+  it("returns null for text without snapshot", () => {
+    const parsed = parsePlaywrightResponse(noSnapshotText);
+    expect(parsed).toBeNull();
   });
 });
 

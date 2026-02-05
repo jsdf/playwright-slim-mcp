@@ -51,9 +51,61 @@ const SKIP_SUMMARIZE_TOOLS = new Set([
   "browser_snapshot_full", // Explicit full snapshot request
 ]);
 
-// Pattern to find the Page Snapshot section (new Playwright MCP format)
-export const SNAPSHOT_PATTERN =
-  /### Page\n- Page URL: ([^\n]+)\n- Page Title: ([^\n]+)\n### Snapshot\n```yaml\n([\s\S]*?)```/;
+/**
+ * Parsed result from a Playwright response containing page and snapshot info.
+ */
+export interface ParsedSnapshot {
+  url: string;
+  title: string;
+  snapshotYaml: string;
+  /** The full matched text from "### Page" through end of snapshot, for replacement */
+  fullMatch: string;
+}
+
+/**
+ * Parse a Playwright MCP response to extract page info and snapshot.
+ * More robust than regex - handles varying content between sections.
+ */
+export function parsePlaywrightResponse(text: string): ParsedSnapshot | null {
+  // Find the "### Page" section start
+  const pageSectionStart = text.indexOf("### Page\n");
+  if (pageSectionStart === -1) return null;
+
+  // Find where the Page section ends (next ### or end of text)
+  const afterPageHeader = pageSectionStart + "### Page\n".length;
+  const nextSectionAfterPage = text.indexOf("\n### ", afterPageHeader);
+  const pageSectionEnd =
+    nextSectionAfterPage !== -1 ? nextSectionAfterPage : text.length;
+  const pageSection = text.slice(afterPageHeader, pageSectionEnd);
+
+  // Extract URL and Title from the Page section
+  const urlMatch = pageSection.match(/^- Page URL: (.+)$/m);
+  const titleMatch = pageSection.match(/^- Page Title: (.+)$/m);
+  if (!urlMatch || !titleMatch) return null;
+
+  // Find the "### Snapshot" section with yaml content
+  const snapshotHeaderStart = text.indexOf("### Snapshot\n", pageSectionStart);
+  if (snapshotHeaderStart === -1) return null;
+
+  const yamlStart = text.indexOf("```yaml\n", snapshotHeaderStart);
+  if (yamlStart === -1) return null;
+
+  const yamlContentStart = yamlStart + "```yaml\n".length;
+  const yamlEnd = text.indexOf("```", yamlContentStart);
+  if (yamlEnd === -1) return null;
+
+  const snapshotYaml = text.slice(yamlContentStart, yamlEnd);
+
+  // fullMatch spans from "### Page" through end of snapshot code block
+  const fullMatch = text.slice(pageSectionStart, yamlEnd + "```".length);
+
+  return {
+    url: urlMatch[1],
+    title: titleMatch[1],
+    snapshotYaml,
+    fullMatch,
+  };
+}
 
 // Pattern to find the Events section
 export const EVENTS_PATTERN = /### Events\n([\s\S]*?)(?=\n###|$)/;
@@ -115,16 +167,16 @@ const SUMMARIZE_MODEL = process.env.PLAYWRIGHT_SLIM_MODEL || "claude-3-5-haiku-l
 const MAX_SNAPSHOT_SIZE = 100000;
 
 export async function summarizeSnapshot(fullText: string): Promise<string> {
-  const match = fullText.match(SNAPSHOT_PATTERN);
-  if (!match) {
-    log("DEBUG", "SNAPSHOT_PATTERN did not match", {
+  const parsed = parsePlaywrightResponse(fullText);
+  if (!parsed) {
+    log("DEBUG", "parsePlaywrightResponse did not match", {
       textLength: fullText.length,
       textPreview: fullText.slice(0, 500),
     });
     return fullText; // No snapshot found, return as-is
   }
 
-  const [fullMatch, pageUrl, pageTitle, snapshotYaml] = match;
+  const { fullMatch, url: pageUrl, title: pageTitle, snapshotYaml } = parsed;
 
   // Skip summarization for small snapshots (< 500 chars)
   if (snapshotYaml.length < 500) {
