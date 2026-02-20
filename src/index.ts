@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn, ChildProcess } from "child_process";
+import { spawn, exec, ChildProcess } from "child_process";
 import { createInterface } from "readline";
 import { appendFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
@@ -297,6 +297,37 @@ class PlaywrightMCPProxy {
   private playwrightProcess: ChildProcess | null = null;
   private pendingRequests = new Map<string | number, string>(); // id -> method name
 
+  /**
+   * Kill Chromium/Chrome processes in our process group, leaving the MCP server alive.
+   * Works around @playwright/mcp browser_close not always terminating the browser.
+   */
+  private killBrowserProcesses(): void {
+    if (!this.playwrightProcess?.pid) return;
+    const pgid = this.playwrightProcess.pid;
+    exec(`pgrep -g ${pgid} -fi chromium | xargs kill 2>/dev/null`, (err) => {
+      log("DEBUG", "killBrowserProcesses", { pgid, error: err ? String(err) : null });
+    });
+  }
+
+  private killProcessTree(): void {
+    if (!this.playwrightProcess?.pid) return;
+    try {
+      // Kill the entire process group (negative PID) so Chromium dies too
+      process.kill(-this.playwrightProcess.pid, "SIGTERM");
+    } catch {
+      // Process group may already be dead
+    }
+    // Force kill after 2s if SIGTERM wasn't enough
+    const pid = this.playwrightProcess.pid;
+    setTimeout(() => {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        // Already dead
+      }
+    }, 2000).unref();
+  }
+
   async start(): Promise<void> {
     ensureLogDir();
 
@@ -311,6 +342,7 @@ class PlaywrightMCPProxy {
     this.playwrightProcess = spawn("npx", args, {
       stdio: ["pipe", "pipe", "inherit"],
       env: { ...process.env },
+      detached: true, // Create process group so we can kill browser on exit
     });
 
     if (!this.playwrightProcess.stdout || !this.playwrightProcess.stdin) {
@@ -326,7 +358,7 @@ class PlaywrightMCPProxy {
     // Clean up child process when stdin closes (parent disconnects)
     stdinReader.on("close", () => {
       log("INFO", "stdin closed, shutting down");
-      this.playwrightProcess?.kill();
+      this.killProcessTree();
       process.exit(0);
     });
 
@@ -405,25 +437,25 @@ class PlaywrightMCPProxy {
 
     process.on("SIGINT", () => {
       log("INFO", "Received SIGINT, shutting down");
-      this.playwrightProcess?.kill();
+      this.killProcessTree();
       process.exit(0);
     });
 
     process.on("SIGTERM", () => {
       log("INFO", "Received SIGTERM, shutting down");
-      this.playwrightProcess?.kill();
+      this.killProcessTree();
       process.exit(0);
     });
 
     process.on("SIGHUP", () => {
       log("INFO", "Received SIGHUP, shutting down");
-      this.playwrightProcess?.kill();
+      this.killProcessTree();
       process.exit(0);
     });
 
     // Catch-all for any exit path
     process.on("exit", () => {
-      this.playwrightProcess?.kill();
+      this.killProcessTree();
     });
   }
 
@@ -466,6 +498,11 @@ class PlaywrightMCPProxy {
         // Process the result to summarize snapshots
         if (message.result) {
           message.result = await processToolResult(toolName, message.result);
+        }
+
+        // Work around browser_close not killing the Chromium process
+        if (toolName === "browser_close" && !message.error) {
+          this.killBrowserProcesses();
         }
       }
 
