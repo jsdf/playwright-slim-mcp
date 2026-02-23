@@ -161,7 +161,7 @@ export function summarizeEvents(fullText: string): string {
 const anthropic = new Anthropic();
 
 // Model for summarization - can be overridden via env var
-const SUMMARIZE_MODEL = process.env.PLAYWRIGHT_SLIM_MODEL || "claude-3-5-haiku-latest";
+const SUMMARIZE_MODEL = process.env.PLAYWRIGHT_SLIM_MODEL || "claude-haiku-4-5";
 
 // Max snapshot size to send to API (chars). ~100KB keeps us well under token limits.
 const MAX_SNAPSHOT_SIZE = 100000;
