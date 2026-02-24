@@ -460,58 +460,61 @@ class PlaywrightMCPProxy {
   }
 
   private async processLine(line: string): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let message: any;
     try {
-      const message = JSON.parse(line);
-
-      // Inject aliased tools into tools/list response
-      if (message.result?.tools && Array.isArray(message.result.tools)) {
-        const snapshotTool = message.result.tools.find(
-          (t: { name: string }) => t.name === "browser_snapshot"
-        );
-        if (snapshotTool) {
-          message.result.tools.push({
-            ...snapshotTool,
-            name: "browser_snapshot_full",
-            description:
-              "Capture full accessibility snapshot without summarization",
-            annotations: {
-              ...snapshotTool.annotations,
-              title: "Full page snapshot (unsummarized)",
-            },
-          });
-        }
-      }
-
-      // Check if this is a response to a tool call
-      if (message.id !== undefined && this.pendingRequests.has(message.id)) {
-        const toolName = this.pendingRequests.get(message.id)!;
-        this.pendingRequests.delete(message.id);
-
-        const willSummarize = !SKIP_SUMMARIZE_TOOLS.has(toolName);
-        log("INFO", "Tool response", {
-          id: message.id,
-          tool: toolName,
-          willSummarize,
-          hasError: !!message.error,
-        });
-
-        // Process the result to summarize snapshots
-        if (message.result) {
-          message.result = await processToolResult(toolName, message.result);
-        }
-
-        // Work around browser_close not killing the Chromium process
-        if (toolName === "browser_close" && !message.error) {
-          this.killBrowserProcesses();
-        }
-      }
-
-      // Send processed message to Claude Code
-      process.stdout.write(JSON.stringify(message) + "\n");
+      message = JSON.parse(line);
     } catch {
       // Forward non-JSON lines as-is
       process.stdout.write(line + "\n");
+      return;
     }
+
+    // Inject aliased tools into tools/list response
+    if (message.result?.tools && Array.isArray(message.result.tools)) {
+      const snapshotTool = message.result.tools.find(
+        (t: { name: string }) => t.name === "browser_snapshot"
+      );
+      if (snapshotTool) {
+        message.result.tools.push({
+          ...snapshotTool,
+          name: "browser_snapshot_full",
+          description:
+            "Capture full accessibility snapshot without summarization",
+          annotations: {
+            ...snapshotTool.annotations,
+            title: "Full page snapshot (unsummarized)",
+          },
+        });
+      }
+    }
+
+    // Check if this is a response to a tool call
+    if (message.id !== undefined && this.pendingRequests.has(message.id)) {
+      const toolName = this.pendingRequests.get(message.id)!;
+      this.pendingRequests.delete(message.id);
+
+      const willSummarize = !SKIP_SUMMARIZE_TOOLS.has(toolName);
+      log("INFO", "Tool response", {
+        id: message.id,
+        tool: toolName,
+        willSummarize,
+        hasError: !!message.error,
+      });
+
+      // Process the result to summarize snapshots
+      if (message.result) {
+        message.result = await processToolResult(toolName, message.result);
+      }
+
+      // Work around browser_close not killing the Chromium process
+      if (toolName === "browser_close" && !message.error) {
+        this.killBrowserProcesses();
+      }
+    }
+
+    // Send processed message to Claude Code
+    process.stdout.write(JSON.stringify(message) + "\n");
   }
 }
 
