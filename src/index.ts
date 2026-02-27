@@ -249,8 +249,9 @@ ${summary}`;
 
     return fullText.replace(fullMatch, newPageState);
   } catch (err) {
-    log("ERROR", "Error calling Anthropic API", { error: String(err) });
-    throw new Error(`Anthropic API error: ${err instanceof Error ? err.message : String(err)}`);
+    // Intentionally throw on error - never fall back to unsummarized content
+    log("ERROR", "Error calling Anthropic API", { error: String(err), stack: err instanceof Error ? err.stack : undefined });
+    throw new Error(`Anthropic API error: ${err instanceof Error ? err.stack : String(err)}`);
   }
 }
 
